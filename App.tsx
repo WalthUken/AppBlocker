@@ -17,15 +17,18 @@ import { SettingsView } from './src/components/SettingsView'
 import { StatsView } from './src/components/StatsView'
 import { SetupFlow } from './src/onboarding/SetupFlow'
 import {
+  defaultWorkSchedule,
   finishSetupPatch,
   loadPersisted,
   resetPersisted,
   savePersisted,
 } from './src/storage'
 import { colors } from './src/theme'
-import type { PersistedState, TabId, UserProfile } from './src/types'
+import type { DayUsage, PersistedState, TabId, UserProfile } from './src/types'
 import { addOrMergeDaily, computeStreak, dateKey } from './src/utils/stats'
 import { daysInAppSince } from './src/utils/time'
+
+const STOP_SESSION_DELAY_MS = 20_000
 
 type ActiveSession = {
   id: string
@@ -33,6 +36,8 @@ type ActiveSession = {
   startedAt: number
   endAt: number
   durationMinutes: number
+  /** Earliest time the user may end the session early (commitment delay). */
+  stopAvailableAt: number
 }
 
 function randomId(): string {
@@ -43,9 +48,24 @@ function randomId(): string {
   })
 }
 
+function focusMinutesLastNDays(daily: DayUsage[], n: number): number {
+  const keys = new Set<string>()
+  for (let i = 0; i < n; i++) {
+    const d = new Date()
+    d.setHours(12, 0, 0, 0)
+    d.setDate(d.getDate() - i)
+    keys.add(dateKey(d))
+  }
+  return daily.filter((x) => keys.has(x.date)).reduce((s, x) => s + x.minutes, 0)
+}
+
+function totalFocusMinutesRecorded(daily: DayUsage[]): number {
+  return daily.reduce((s, x) => s + x.minutes, 0)
+}
+
 function Shell() {
   const insets = useSafeAreaInsets()
-  const [tab, setTab] = useState<TabId>('stats')
+  const [tab, setTab] = useState<TabId>('home')
   const [data, setData] = useState<PersistedState | null>(null)
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null)
   const [now, setNow] = useState(() => Date.now())
@@ -119,6 +139,8 @@ function Shell() {
   }
 
   const enabledBlockCount = data.targets.filter((t) => t.enabled).length
+  const weeklyFocusMinutes = focusMinutesLastNDays(data.dailyFocusMinutes, 7)
+  const totalFocusMins = totalFocusMinutesRecorded(data.dailyFocusMinutes)
   const bottomInset = insets.bottom
 
   return (
@@ -128,8 +150,21 @@ function Shell() {
         {tab === 'home' && (
           <HomeView
             enabledBlockCount={enabledBlockCount}
+            dailyUsage={data.dailyUsage}
+            fallbackScreenMinutes={data.profile.reportedDailyPhoneMinutes}
+            totalFocusMinutes={totalFocusMins}
             currentStreak={computeStreak(data.dailyFocusMinutes)}
             daysInApp={daysInAppSince(data.profile.setupCompletedAt)}
+            weeklyFocusMinutes={weeklyFocusMinutes}
+            workSchedule={data.workSchedule}
+            onUpdateWorkSchedule={(next) =>
+              setData((d) => (d ? { ...d, workSchedule: next } : d))
+            }
+            onResetWorkSchedule={() =>
+              setData((d) => (d ? { ...d, workSchedule: defaultWorkSchedule() } : d))
+            }
+            onOpenBlockTab={() => setTab('block')}
+            onOpenSettings={() => setTab('settings')}
             scrollIntroDone={data.profile.hasSeenMainScrollIntro === true}
             onScrollPastIntro={() =>
               setData((d) =>
@@ -153,6 +188,41 @@ function Shell() {
                 startedAt: t,
                 endAt: t + minutes * 60_000,
                 durationMinutes: minutes,
+                stopAvailableAt: t + STOP_SESSION_DELAY_MS,
+              })
+            }}
+            onStopSessionEarly={() => {
+              const cur = activeSession
+              if (!cur) return
+              const t = Date.now()
+              if (t < cur.stopAvailableAt) return
+              if (lastCompletedId.current === cur.id) return
+              lastCompletedId.current = cur.id
+              const elapsedMs = t - cur.startedAt
+              const partialMinutes = Math.max(
+                1,
+                Math.min(cur.durationMinutes, Math.ceil(elapsedMs / 60_000)),
+              )
+              setActiveSession(null)
+              setData((d) => {
+                if (!d) return d
+                return {
+                  ...d,
+                  sessions: [
+                    {
+                      id: randomId(),
+                      title: cur.title,
+                      startedAt: new Date(cur.startedAt).toISOString(),
+                      durationMinutes: partialMinutes,
+                    },
+                    ...d.sessions,
+                  ],
+                  dailyFocusMinutes: addOrMergeDaily(
+                    d.dailyFocusMinutes,
+                    dateKey(new Date()),
+                    partialMinutes,
+                  ),
+                }
               })
             }}
           />
@@ -160,6 +230,9 @@ function Shell() {
         {tab === 'block' && (
           <BlockView
             targets={data.targets}
+            enabledBlockCount={enabledBlockCount}
+            active={activeSession}
+            now={now}
             bottomInset={bottomInset}
             onToggle={(id) =>
               setData((d) =>
@@ -185,6 +258,52 @@ function Shell() {
                 }
               })
             }
+            onStartSession={(minutes, title) => {
+              const t = Date.now()
+              setNow(t)
+              setActiveSession({
+                id: randomId(),
+                title,
+                startedAt: t,
+                endAt: t + minutes * 60_000,
+                durationMinutes: minutes,
+                stopAvailableAt: t + STOP_SESSION_DELAY_MS,
+              })
+            }}
+            onStopSessionEarly={() => {
+              const cur = activeSession
+              if (!cur) return
+              const t = Date.now()
+              if (t < cur.stopAvailableAt) return
+              if (lastCompletedId.current === cur.id) return
+              lastCompletedId.current = cur.id
+              const elapsedMs = t - cur.startedAt
+              const partialMinutes = Math.max(
+                1,
+                Math.min(cur.durationMinutes, Math.ceil(elapsedMs / 60_000)),
+              )
+              setActiveSession(null)
+              setData((d) => {
+                if (!d) return d
+                return {
+                  ...d,
+                  sessions: [
+                    {
+                      id: randomId(),
+                      title: cur.title,
+                      startedAt: new Date(cur.startedAt).toISOString(),
+                      durationMinutes: partialMinutes,
+                    },
+                    ...d.sessions,
+                  ],
+                  dailyFocusMinutes: addOrMergeDaily(
+                    d.dailyFocusMinutes,
+                    dateKey(new Date()),
+                    partialMinutes,
+                  ),
+                }
+              })
+            }}
           />
         )}
         {tab === 'stats' && (

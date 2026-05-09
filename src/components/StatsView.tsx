@@ -1,35 +1,25 @@
 import { Ionicons } from '@expo/vector-icons'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import {
-  Animated,
-  PanResponder,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native'
-import Svg, { Circle, Line, Path } from 'react-native-svg'
+import { useMemo, useState } from 'react'
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import Svg, { Path } from 'react-native-svg'
 import type { PersistedState } from '../types'
-import { colors, fonts, space } from '../theme'
+import { appBrandName, cardRadius, colors, fonts, space } from '../theme'
 import {
-  computeStreak,
-  consistencyLabel,
-  focusTrendPath,
+  awakeTimePercent,
   focusTrendPercent,
-  focusTrendSeries,
-  type TrendPoint,
-  formatDurationMinutes,
+  focusTrendPath,
+  formatAvgScreenHeading,
   formatSessionWhen,
   last7DaysUsage,
   lastFourWeekTotals,
-  maxMinutes,
-  rankLabel,
+  lastNWeekTotals,
   sortSessionsRecent,
   todayMinutes,
+  usageBarsToPaths,
   weekOverWeekReductionLabel,
 } from '../utils/stats'
 
-type Period = 'week' | 'month'
+type AnalyticsTab = 'week' | 'month' | 'lifetime'
 
 type Props = {
   data: PersistedState
@@ -37,614 +27,472 @@ type Props = {
   bottomInset: number
 }
 
-function rankStripeCount(title: string): number {
-  if (title === 'Elite') return 4
-  if (title === 'Dedicated') return 3
-  if (title === 'Rising') return 2
-  return 1
-}
-
-function RankDiamond({ title }: { title: string }) {
-  const n = rankStripeCount(title)
+function AvatarMark() {
   return (
-    <View style={styles.rankRow}>
-      <View style={styles.diamondOuter}>
-        <View style={styles.diamond} />
-      </View>
-      <View style={styles.stripes}>
-        {Array.from({ length: n }).map((_, i) => (
-          <View key={i} style={styles.stripe} />
-        ))}
-      </View>
-    </View>
-  )
-}
-
-function ScrubLineChart({
-  pathD,
-  points,
-}: {
-  pathD: string
-  points: TrendPoint[]
-}) {
-  const [w, setW] = useState(0)
-  const [idx, setIdx] = useState<number | null>(null)
-
-  const applyX = (x: number) => {
-    if (w <= 0 || points.length === 0) return
-    const ratio = Math.max(0, Math.min(1, x / w))
-    const i = Math.round(ratio * Math.max(0, points.length - 1))
-    setIdx(i)
-  }
-
-  const pan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (e) => applyX(e.nativeEvent.locationX),
-      onPanResponderMove: (e) => applyX(e.nativeEvent.locationX),
-      onPanResponderRelease: () => setIdx(null),
-      onPanResponderTerminate: () => setIdx(null),
-    }),
-  ).current
-
-  const cur = idx != null ? points[idx] : null
-  const tipLeft =
-    cur && w > 0 ? Math.min(w - 120, Math.max(8, (cur.x / 400) * w - 50)) : 0
-
-  return (
-    <View
-      style={styles.scrubWrap}
-      onLayout={(e) => setW(e.nativeEvent.layout.width)}
-    >
-      {cur ? (
-        <View style={[styles.tooltip, { left: tipLeft }]}>
-          <Text style={styles.tooltipBig}>{formatDurationMinutes(cur.minutes)}</Text>
-          <Text style={styles.tooltipSmall}>{cur.date || '—'}</Text>
-        </View>
-      ) : null}
-      <View style={styles.svgInner}>
-        <Svg width="100%" height="100%" viewBox="0 0 400 100" preserveAspectRatio="none">
-          <Path d={pathD} fill="none" stroke={colors.text} strokeWidth={1.5} />
-          {cur && idx != null ? (
-            <>
-              <Line
-                x1={cur.x}
-                y1={0}
-                x2={cur.x}
-                y2={100}
-                stroke="rgba(255,255,255,0.35)"
-                strokeWidth={1}
-              />
-              <Circle
-                cx={cur.x}
-                cy={cur.y}
-                r={4}
-                fill={colors.bg}
-                stroke={colors.text}
-                strokeWidth={1.5}
-              />
-            </>
-          ) : null}
-        </Svg>
-        <View style={StyleSheet.absoluteFill} {...pan.panHandlers} />
-      </View>
-      <Text style={styles.scrubHint}>Hold and drag horizontally to scrub the series.</Text>
+    <View style={styles.avatarRing}>
+      <Ionicons name="person-outline" size={22} color={colors.muted2} />
     </View>
   )
 }
 
 export function StatsView({ data, onOpenSettings, bottomInset }: Props) {
-  const [period, setPeriod] = useState<Period>('week')
-  const scrollY = useRef(new Animated.Value(0)).current
+  const [analyticsTab, setAnalyticsTab] = useState<AnalyticsTab>('week')
   const fallback = data.profile.reportedDailyPhoneMinutes || 180
 
-  const streak = computeStreak(data.dailyFocusMinutes)
-  const rank = rankLabel(streak)
-  const bars =
-    period === 'week'
-      ? last7DaysUsage(data.dailyUsage, fallback)
-      : lastFourWeekTotals(data.dailyUsage, fallback)
-  const cap = maxMinutes(bars)
-  const today = todayMinutes(data.dailyUsage, fallback)
+  const trendPct = focusTrendPercent(data.dailyFocusMinutes)
+  const trendPathD = focusTrendPath(data.dailyFocusMinutes)
   const reduction = weekOverWeekReductionLabel(data.dailyUsage, fallback)
-  const trend = focusTrendPercent(data.dailyFocusMinutes)
-  const trendPath = focusTrendPath(data.dailyFocusMinutes)
-  const trendPts = focusTrendSeries(data.dailyFocusMinutes)
+  const today = todayMinutes(data.dailyUsage, fallback)
   const attempts = data.blockAttempts
   const failed = data.blockFailed
   const successRate =
     attempts === 0 ? 100 : Math.round(((attempts - failed) / attempts) * 100)
-  const sessions = sortSessionsRecent(data.sessions).slice(0, 8)
+  const sessions = sortSessionsRecent(data.sessions).slice(0, 12)
 
-  const barSig = bars.map((b) => b.key).join('|')
-  const barAnims = useMemo(
-    () => bars.map(() => new Animated.Value(0)),
-    [period, barSig],
-  )
-  useEffect(() => {
-    barAnims.forEach((a) => a.setValue(0))
-    Animated.stagger(
-      45,
-      barAnims.map((a) =>
-        Animated.timing(a, {
-          toValue: 1,
-          duration: 420,
-          useNativeDriver: false,
-        }),
-      ),
-    ).start()
-  }, [barAnims, barSig, period])
+  const chartBars = useMemo(() => {
+    if (analyticsTab === 'week') return last7DaysUsage(data.dailyUsage, fallback)
+    if (analyticsTab === 'month') return lastFourWeekTotals(data.dailyUsage, fallback)
+    return lastNWeekTotals(data.dailyUsage, 12, fallback)
+  }, [analyticsTab, data.dailyUsage, fallback])
 
-  /** First blocks stay full strength; lower sections ease in as you scroll (no heavy dimming). */
-  let sidx = 0
-  const wrap = (key: string, child: ReactNode) => {
-    const i = sidx++
-    if (i < 2) {
-      return <View key={key}>{child}</View>
-    }
-    const start = 16 + (i - 2) * 48
-    const opacity = scrollY.interpolate({
-      inputRange: [start, start + 110],
-      outputRange: [0.96, 1],
-      extrapolate: 'clamp',
-    })
-    const translateY = scrollY.interpolate({
-      inputRange: [start, start + 110],
-      outputRange: [6, 0],
-      extrapolate: 'clamp',
-    })
-    return (
-      <Animated.View key={key} style={{ opacity, transform: [{ translateY }] }}>
-        {child}
-      </Animated.View>
-    )
-  }
-  sidx = 0
+  const avgDailyScreen = useMemo(() => {
+    const sum = chartBars.reduce((s, b) => s + b.minutes, 0)
+    if (analyticsTab === 'week') return sum / 7
+    if (analyticsTab === 'month') return sum / 28
+    return sum / 84
+  }, [chartBars, analyticsTab])
+
+  const { lineD, areaD } = useMemo(() => usageBarsToPaths(chartBars), [chartBars])
+  const awakePct = awakeTimePercent(avgDailyScreen)
+
+  const chartFooter =
+    analyticsTab === 'week'
+      ? 'Last 7 Days'
+      : analyticsTab === 'month'
+        ? 'Last 4 Weeks'
+        : 'Last 12 Weeks'
 
   return (
-    <Animated.ScrollView
+    <ScrollView
       style={styles.scroll}
-      contentContainerStyle={[
-        styles.content,
-        { paddingBottom: bottomInset + space.bottomNav + 28 },
-      ]}
-      onScroll={Animated.event(
-        [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-        { useNativeDriver: false },
-      )}
-      scrollEventThrottle={16}
+      contentContainerStyle={[styles.content, { paddingBottom: bottomInset + space.bottomNav + 28 }]}
+      showsVerticalScrollIndicator={false}
     >
-      {wrap(
-        'header',
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.kicker}>Statistics</Text>
-            <Text style={styles.title}>
-              Focus{'\n'}Performance
+      <View style={styles.kickerRow}>
+        <Text style={styles.pageKicker}>Statistics</Text>
+      </View>
+
+      <View style={styles.profileHeader}>
+        <View style={styles.profileLeft}>
+          <AvatarMark />
+          <View style={styles.profileTextCol}>
+            <Text style={styles.displayName} numberOfLines={1}>
+              {appBrandName}
             </Text>
           </View>
-          <Pressable
-            onPress={onOpenSettings}
-            accessibilityLabel="Open settings"
-            style={styles.tuneBtn}
-          >
-            <Ionicons name="options-outline" size={26} color="rgba(255,255,255,0.6)" />
+        </View>
+        <View style={styles.profileActions}>
+          <Pressable onPress={onOpenSettings} hitSlop={10} style={styles.iconHit}>
+            <Ionicons name="settings-outline" size={22} color={colors.muted2} />
           </Pressable>
-        </View>,
-      )}
-
-      {wrap(
-        'grid2',
-        <View style={styles.grid2}>
-          <View style={styles.cell}>
-            <Text style={styles.label}>Streak</Text>
-            <Text style={styles.bigLight}>{streak}</Text>
-            <Text style={styles.caption}>
-              Consistency: {consistencyLabel(streak)}
-            </Text>
-          </View>
-          <View style={[styles.cell, { alignItems: 'flex-end' }]}>
-            <Text style={[styles.label, { alignSelf: 'flex-end' }]}>Rank</Text>
-            <View style={styles.rankBlock}>
-              <RankDiamond title={rank.title} />
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.bigLight}>{rank.title}</Text>
-                <Text style={styles.caption}>{rank.subtitle}</Text>
-              </View>
-            </View>
-          </View>
-        </View>,
-      )}
-
-      {wrap(
-        'toggle',
-        <View style={styles.periodToggle}>
-          <Pressable
-            onPress={() => setPeriod('week')}
-            style={[styles.periodChip, period === 'week' && styles.periodChipOn]}
-          >
-            <Text
-              style={[styles.periodChipText, period === 'week' && styles.periodChipTextOn]}
-            >
-              Weekly
-            </Text>
+          <Pressable hitSlop={10} style={styles.iconHit}>
+            <Ionicons name="share-outline" size={20} color={colors.muted3} />
           </Pressable>
-          <Pressable
-            onPress={() => setPeriod('month')}
-            style={[styles.periodChip, period === 'month' && styles.periodChipOn]}
-          >
-            <Text
-              style={[styles.periodChipText, period === 'month' && styles.periodChipTextOn]}
-            >
-              Monthly
-            </Text>
-          </Pressable>
-        </View>,
-      )}
+        </View>
+      </View>
 
-      {wrap(
-        'chart',
-        <View style={styles.chartSection}>
-          <View style={styles.dailyHeader}>
-            <View style={{ flex: 1, marginRight: 12 }}>
-              <Text style={styles.label}>Phone time (estimate)</Text>
-              <Text style={styles.huge}>{formatDurationMinutes(today)}</Text>
-              <Text style={styles.chartHint}>
-                Match this to Settings, Screen Time, then adjust in Settings here if needed.
-              </Text>
-            </View>
-            <View style={{ alignItems: 'flex-end', paddingBottom: 8 }}>
-              <Text style={styles.reduction}>{reduction}</Text>
-              <Text style={styles.reductionMeta}>Vs prior week</Text>
-            </View>
-          </View>
-
-          <View style={styles.barsRow}>
-            {bars.map((b, bi) => {
-              const pct = Math.max(8, Math.round((b.minutes / cap) * 100))
-              const barH = Math.max(10, Math.round((pct / 100) * 96))
-              const active = b.isToday
-              const anim = barAnims[bi]
-              const h = anim
-                ? anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [4, barH],
-                  })
-                : barH
-              return (
-                <View key={b.key} style={styles.barCol}>
-                  <View style={styles.barStack}>
-                    <Animated.View
-                      style={[
-                        styles.bar,
-                        {
-                          height: h,
-                          borderWidth: active ? 2 : StyleSheet.hairlineWidth,
-                          borderColor: active ? colors.text : colors.barBorder,
-                        },
-                      ]}
-                    />
-                  </View>
-                  <Text
-                    style={[
-                      styles.barLabel,
-                      active && { ...fonts.bold, color: colors.text },
-                    ]}
-                  >
-                    {period === 'month' ? `W${b.label}` : b.label}
-                  </Text>
-                </View>
-              )
-            })}
-          </View>
-        </View>,
-      )}
-
-      {wrap(
-        'trend',
-        <View style={{ gap: 48 }}>
-          <View style={{ gap: 24 }}>
-            <View style={styles.trendHead}>
-              <Text style={styles.label}>Focus Trend</Text>
-              <Text style={styles.trendPct}>
-                {trend >= 0 ? '+' : ''}
-                {trend}%
-              </Text>
-            </View>
-            <ScrubLineChart pathD={trendPath} points={trendPts} />
-          </View>
-
-          <View style={styles.successRow}>
-            <View>
-              <Text style={styles.label}>Block Success Rate</Text>
-              <Text style={styles.successVal}>{successRate}%</Text>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 32 }}>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.metaUpper}>Attempts</Text>
-                <Text style={styles.metaNum}>{attempts}</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.metaUpper}>Failed</Text>
-                <Text style={styles.metaNum}>{failed}</Text>
-              </View>
-            </View>
-          </View>
-        </View>,
-      )}
-
-      {wrap(
-        'log',
-        <View style={{ paddingTop: 16, gap: 32 }}>
-          <Text style={styles.logTitle}>Session Log</Text>
-          <View>
-            {sessions.map((s, i) => (
-              <View
-                key={s.id}
-                style={[
-                  styles.logRow,
-                  i > 0 && {
-                    borderTopWidth: StyleSheet.hairlineWidth,
-                    borderTopColor: colors.border,
-                  },
-                ]}
+      <View style={[styles.analyticsCard, styles.minCard]}>
+        <View style={styles.analyticsTabs}>
+          {(['week', 'month', 'lifetime'] as const).map((t) => {
+            const on = analyticsTab === t
+            const label = t === 'week' ? 'Week' : t === 'month' ? 'Month' : 'Lifetime'
+            return (
+              <Pressable
+                key={t}
+                onPress={() => setAnalyticsTab(t)}
+                style={[styles.analyticsTab, on && styles.analyticsTabOn]}
               >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.logName}>{s.title}</Text>
-                  <Text style={styles.logWhen}>{formatSessionWhen(s.startedAt)}</Text>
-                </View>
-                <Text style={styles.logDur}>{s.durationMinutes}m</Text>
-              </View>
-            ))}
+                <Text style={[styles.analyticsTabText, on && styles.analyticsTabTextOn]}>
+                  {label}
+                </Text>
+              </Pressable>
+            )
+          })}
+        </View>
+        <View style={styles.analyticsHead}>
+          <View>
+            <Text style={styles.analyticsBig}>{formatAvgScreenHeading(avgDailyScreen)}</Text>
+            <Text style={styles.analyticsSub}>Avg Screen Time</Text>
           </View>
-        </View>,
-      )}
+          <View style={styles.awakeCol}>
+            <Text style={styles.awakeLabel}>AWAKE TIME</Text>
+            <Text style={styles.awakePct}>{awakePct}%</Text>
+          </View>
+        </View>
+        <View style={styles.chartWrap}>
+          <Svg width="100%" height={120} viewBox="0 0 400 100" preserveAspectRatio="none">
+            {areaD ? <Path d={areaD} fill="rgba(255,255,255,0.04)" /> : null}
+            <Path
+              d={lineD}
+              fill="none"
+              stroke="rgba(255,255,255,0.35)"
+              strokeWidth={1.25}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </Svg>
+        </View>
+        <View style={styles.chartAxis}>
+          {chartBars.map((b) => (
+            <Text key={b.key} style={styles.chartTick}>
+              {b.label}
+            </Text>
+          ))}
+        </View>
+        <View style={styles.chartFooter}>
+          <Ionicons name="chevron-back" size={18} color={colors.muted3} />
+          <Text style={styles.chartFooterText}>{chartFooter}</Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.muted3} />
+        </View>
+      </View>
 
-      {wrap(
-        'footer',
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            Digital austerity is the final frontier of modern freedom.
+      <View style={[styles.subCard, styles.minCard]}>
+        <View style={styles.subCardHead}>
+          <Text style={styles.subCardKicker}>Today (estimate)</Text>
+          <Text style={styles.subCardStat}>{Math.round(today)} min</Text>
+          <Text style={styles.subCardHint}>Match Screen Time in Settings if needed.</Text>
+        </View>
+        <View style={styles.subCardDivider} />
+        <View style={styles.rowBetween}>
+          <View>
+            <Text style={styles.subCardKicker}>Vs prior week</Text>
+            <Text style={styles.reductionMeta}>Screen time estimate</Text>
+          </View>
+          <Text style={styles.reduction}>{reduction}</Text>
+        </View>
+      </View>
+
+      <View style={[styles.trendCard, styles.minCard]}>
+        <View style={styles.rowBetween}>
+          <Text style={styles.sectionLabel}>Focus trend</Text>
+          <Text style={styles.trendPct}>
+            {trendPct >= 0 ? '+' : ''}
+            {trendPct}%
           </Text>
-          <View style={styles.footerRule} />
-        </View>,
-      )}
-    </Animated.ScrollView>
+        </View>
+        <View style={styles.trendChartWrap}>
+          <Svg width="100%" height={72} viewBox="0 0 400 100" preserveAspectRatio="none">
+            <Path
+              d={trendPathD}
+              fill="none"
+              stroke="rgba(255,255,255,0.35)"
+              strokeWidth={1.25}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </Svg>
+        </View>
+      </View>
+
+      <View style={[styles.successCard, styles.minCard]}>
+        <Text style={styles.sectionLabel}>Block attempts</Text>
+        <View style={styles.successMid}>
+          <Text style={styles.successBig}>{successRate}%</Text>
+          <Text style={styles.successCaption}>success rate</Text>
+        </View>
+        <View style={styles.successGrid}>
+          <View>
+            <Text style={styles.metaUpper}>Attempts</Text>
+            <Text style={styles.metaNum}>{attempts}</Text>
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={styles.metaUpper}>Failed</Text>
+            <Text style={styles.metaNum}>{failed}</Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={[styles.logCard, styles.minCard]}>
+        <Text style={styles.sectionTitle}>Session log</Text>
+        {sessions.length === 0 ? (
+          <Text style={styles.emptyLog}>No sessions yet.</Text>
+        ) : (
+          sessions.map((s, i) => (
+            <View
+              key={s.id}
+              style={[
+                styles.logRow,
+                i > 0 && {
+                  borderTopWidth: StyleSheet.hairlineWidth,
+                  borderTopColor: colors.outline,
+                },
+              ]}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.logName}>{s.title}</Text>
+                <Text style={styles.logWhen}>{formatSessionWhen(s.startedAt)}</Text>
+              </View>
+              <Text style={styles.logDur}>{s.durationMinutes}m</Text>
+            </View>
+          ))
+        )}
+      </View>
+    </ScrollView>
   )
 }
 
 const styles = StyleSheet.create({
-  scrubWrap: { marginTop: 8, paddingTop: 44, minHeight: 120 },
-  svgInner: { height: 64, width: '100%' },
-  scrubHint: {
-    ...fonts.regular,
-    fontSize: 11,
-    color: colors.muted2,
-    marginTop: 10,
-  },
-  tooltip: {
-    position: 'absolute',
-    top: 0,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: colors.outline,
-    backgroundColor: 'rgba(0,0,0,0.92)',
-    minWidth: 100,
-    zIndex: 2,
-  },
-  tooltipBig: {
-    ...fonts.semibold,
-    fontSize: 16,
-    color: colors.text,
-  },
-  tooltipSmall: {
-    ...fonts.regular,
-    fontSize: 11,
-    color: colors.muted,
-    marginTop: 2,
-  },
-  rankRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
-  diamondOuter: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  diamond: {
-    width: 22,
-    height: 22,
-    borderWidth: 1.5,
-    borderColor: colors.text,
-    transform: [{ rotate: '45deg' }],
-  },
-  stripes: { gap: 5 },
-  stripe: {
-    width: 36,
-    height: 2,
-    backgroundColor: colors.text,
-  },
-  rankBlock: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   scroll: { flex: 1 },
   content: {
     maxWidth: 672,
     width: '100%',
     alignSelf: 'center',
     paddingHorizontal: space.container,
-    paddingTop: 56,
-    gap: 64,
+    paddingTop: 12,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: -16,
+  minCard: {
+    borderRadius: cardRadius,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.outline,
+    backgroundColor: 'transparent',
   },
-  kicker: {
+  kickerRow: { marginBottom: 20 },
+  pageKicker: {
     ...fonts.semibold,
     fontSize: 12,
     letterSpacing: 2.4,
     color: colors.muted,
     textTransform: 'uppercase',
-    marginBottom: 8,
   },
-  title: {
-    ...fonts.bold,
-    fontSize: 42,
-    lineHeight: 46,
-    color: colors.text,
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
   },
-  tuneBtn: {
-    width: 40,
-    height: 40,
+  profileLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    flex: 1,
+    minWidth: 0,
+  },
+  avatarRing: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.outline,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  grid2: {
-    flexDirection: 'row',
-    gap: 32,
-    alignItems: 'flex-start',
+  profileTextCol: { flex: 1, minWidth: 0, justifyContent: 'center' },
+  displayName: {
+    ...fonts.bold,
+    fontSize: 28,
+    lineHeight: 32,
+    letterSpacing: -0.5,
+    color: colors.text,
   },
-  cell: { flex: 1, gap: 4 },
-  label: {
+  profileActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  iconHit: { padding: 8 },
+  analyticsCard: {
+    padding: 18,
+    marginBottom: 16,
+  },
+  analyticsTabs: {
+    flexDirection: 'row',
+    gap: 20,
+    marginBottom: 18,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.outline,
+    paddingBottom: 10,
+  },
+  analyticsTab: {
+    paddingVertical: 4,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+    marginBottom: -10,
+  },
+  analyticsTabOn: {
+    borderBottomColor: colors.text,
+  },
+  analyticsTabText: {
+    ...fonts.medium,
+    fontSize: 13,
+    color: colors.muted2,
+  },
+  analyticsTabTextOn: {
+    color: colors.text,
+  },
+  analyticsHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  analyticsBig: {
+    ...fonts.light,
+    fontSize: 28,
+    color: colors.text,
+    letterSpacing: -0.5,
+  },
+  analyticsSub: {
+    ...fonts.regular,
+    fontSize: 12,
+    color: colors.muted,
+    marginTop: 6,
+  },
+  awakeCol: { alignItems: 'flex-end' },
+  awakeLabel: {
+    ...fonts.semibold,
+    fontSize: 10,
+    letterSpacing: 1,
+    color: colors.muted,
+  },
+  awakePct: {
+    ...fonts.medium,
+    fontSize: 16,
+    color: colors.text,
+    marginTop: 4,
+    fontVariant: ['tabular-nums'],
+  },
+  chartWrap: {
+    marginTop: 8,
+    height: 120,
+    marginHorizontal: -4,
+  },
+  chartAxis: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    gap: 2,
+  },
+  chartTick: {
+    ...fonts.medium,
+    fontSize: 9,
+    color: colors.muted3,
+    flex: 1,
+    minWidth: 0,
+    textAlign: 'center',
+  },
+  chartFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 12,
+  },
+  chartFooterText: {
+    ...fonts.regular,
+    fontSize: 12,
+    color: colors.muted3,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  subCard: {
+    padding: 18,
+    marginBottom: 16,
+    gap: 16,
+  },
+  subCardHead: { gap: 6 },
+  subCardKicker: {
     ...fonts.semibold,
     fontSize: 11,
     letterSpacing: 1.2,
     color: colors.muted,
     textTransform: 'uppercase',
   },
-  bigLight: {
+  subCardStat: {
     ...fonts.light,
-    fontSize: 32,
+    fontSize: 28,
     color: colors.text,
+    fontVariant: ['tabular-nums'],
   },
-  caption: {
+  subCardHint: {
     ...fonts.regular,
     fontSize: 12,
     color: colors.muted2,
-  },
-  periodToggle: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: -32,
-  },
-  periodChip: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderWidth: 1,
-    borderColor: colors.outline,
-  },
-  periodChipOn: {
-    borderColor: colors.text,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  periodChipText: {
-    ...fonts.semibold,
-    fontSize: 12,
-    letterSpacing: 1.2,
-    color: colors.muted2,
-    textTransform: 'uppercase',
-  },
-  periodChipTextOn: { color: colors.text },
-  chartSection: {
-    borderTopWidth: 0.5,
-    borderBottomWidth: 0.5,
-    borderColor: colors.outline,
-    paddingTop: 32,
-    paddingBottom: 48,
-    gap: 48,
-  },
-  dailyHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  huge: {
-    ...fonts.bold,
-    fontSize: 48,
-    letterSpacing: -1,
-    color: colors.text,
+    lineHeight: 18,
     marginTop: 4,
   },
-  chartHint: {
-    marginTop: 10,
-    ...fonts.regular,
-    fontSize: 12,
-    lineHeight: 18,
-    color: colors.muted2,
-    maxWidth: 280,
+  subCardDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.outline,
+  },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
   },
   reduction: {
     ...fonts.medium,
-    fontSize: 14,
+    fontSize: 16,
     color: colors.text,
+    fontVariant: ['tabular-nums'],
   },
   reductionMeta: {
+    ...fonts.regular,
+    fontSize: 11,
+    color: colors.muted3,
+    marginTop: 4,
+  },
+  trendCard: {
+    padding: 18,
+    marginBottom: 16,
+  },
+  sectionLabel: {
     ...fonts.semibold,
-    fontSize: 10,
-    letterSpacing: 2,
+    fontSize: 11,
+    letterSpacing: 1.2,
     color: colors.muted,
     textTransform: 'uppercase',
-    marginTop: 2,
-  },
-  barsRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    gap: 16,
-    height: 128,
-  },
-  barCol: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-  },
-  barStack: {
-    width: '100%',
-    height: 96,
-    justifyContent: 'flex-end',
-  },
-  bar: {
-    width: '100%',
-    backgroundColor: 'transparent',
-    minHeight: 4,
-  },
-  barLabel: {
-    marginTop: 12,
-    ...fonts.medium,
-    fontSize: 10,
-    color: colors.muted2,
-  },
-  trendHead: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
   },
   trendPct: {
-    ...fonts.bold,
+    ...fonts.medium,
     fontSize: 14,
     color: colors.text,
+    fontVariant: ['tabular-nums'],
   },
-  successRow: {
+  trendChartWrap: {
+    marginTop: 16,
+    height: 72,
+  },
+  successCard: {
+    padding: 18,
+    marginBottom: 16,
+    gap: 16,
+  },
+  successMid: {
+    paddingVertical: 8,
+  },
+  successBig: {
+    ...fonts.light,
+    fontSize: 36,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  successCaption: {
+    ...fonts.regular,
+    fontSize: 12,
+    color: colors.muted2,
+    marginTop: 4,
+  },
+  successGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 0.5,
-    borderBottomWidth: 0.5,
-    borderColor: colors.outline,
-    paddingVertical: 32,
-  },
-  successVal: {
-    ...fonts.bold,
-    fontSize: 32,
-    color: colors.text,
-    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.outline,
   },
   metaUpper: {
     ...fonts.semibold,
     fontSize: 10,
-    letterSpacing: 2,
+    letterSpacing: 1,
     color: colors.muted,
     textTransform: 'uppercase',
   },
@@ -652,53 +500,49 @@ const styles = StyleSheet.create({
     ...fonts.medium,
     fontSize: 18,
     color: colors.text,
-    marginTop: 4,
+    marginTop: 6,
+    fontVariant: ['tabular-nums'],
   },
-  logTitle: {
+  logCard: {
+    padding: 18,
+    marginBottom: 24,
+  },
+  sectionTitle: {
     ...fonts.bold,
-    fontSize: 24,
+    fontSize: 18,
     letterSpacing: -0.3,
     color: colors.text,
+    marginBottom: 8,
+  },
+  emptyLog: {
+    ...fonts.regular,
+    fontSize: 14,
+    color: colors.muted2,
+    paddingVertical: 12,
   },
   logRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 20,
+    paddingVertical: 16,
   },
   logName: {
     ...fonts.medium,
-    fontSize: 17,
+    fontSize: 16,
     color: colors.text,
   },
   logWhen: {
     marginTop: 4,
     ...fonts.regular,
-    fontSize: 13,
-    letterSpacing: 0.5,
+    fontSize: 12,
+    letterSpacing: 0.4,
     color: colors.muted,
     textTransform: 'uppercase',
   },
   logDur: {
-    ...fonts.bold,
-    fontSize: 17,
-    color: 'rgba(255,255,255,0.9)',
-  },
-  footer: {
-    paddingVertical: 96,
-    gap: 24,
-    opacity: 0.3,
-  },
-  footerText: {
-    ...fonts.light,
-    fontSize: 18,
-    lineHeight: 26,
-    maxWidth: 280,
+    ...fonts.medium,
+    fontSize: 15,
     color: colors.text,
-  },
-  footerRule: {
-    width: 48,
-    height: 1,
-    backgroundColor: colors.text,
+    fontVariant: ['tabular-nums'],
   },
 })

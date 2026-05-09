@@ -67,7 +67,33 @@ export function last7DaysUsage(
   return lastNDaysUsage(daily, 7, fallbackMinutes)
 }
 
-/** Four weekly totals, oldest → newest (left → right). Last bar is the current week. */
+/** Rolling `weekCount` weeks, oldest → newest. Each bar is 7 days of screen-estimate minutes. */
+export function lastNWeekTotals(
+  daily: DayUsage[],
+  weekCount: number,
+  fallbackMinutes: number,
+): DayBar[] {
+  const map = new Map(daily.map((x) => [x.date, x.minutes]))
+  const out: DayBar[] = []
+  for (let wi = 0; wi < weekCount; wi++) {
+    let sum = 0
+    for (let d = 0; d < 7; d++) {
+      const offset = (weekCount - 1 - wi) * 7 + d
+      const dt = new Date()
+      dt.setHours(12, 0, 0, 0)
+      dt.setDate(dt.getDate() - offset)
+      sum += map.get(dateKey(dt)) ?? fallbackMinutes
+    }
+    out.push({
+      key: `wk${wi}`,
+      label: `${wi + 1}`,
+      minutes: sum,
+      isToday: wi === weekCount - 1,
+    })
+  }
+  return out
+}
+
 export function lastFourWeekTotals(
   daily: DayUsage[],
   fallbackMinutes: number,
@@ -226,6 +252,69 @@ export function formatDurationMinutes(total: number): string {
   const m = total % 60
   if (h === 0) return `${m}m`
   return `${h}h ${m.toString().padStart(2, '0')}m`
+}
+
+/** Gamified “Top X%” badge from streak (illustrative). */
+export function topPercentLabel(streak: number): string {
+  if (streak >= 14) return 'Top 1%'
+  if (streak >= 7) return 'Top 5%'
+  if (streak >= 3) return 'Top 30%'
+  return 'Top 60%'
+}
+
+export function usageBarsToPaths(bars: { minutes: number }[]): {
+  lineD: string
+  areaD: string
+} {
+  if (bars.length === 0) {
+    return { lineD: 'M0,88 L400,88', areaD: '' }
+  }
+  const max = Math.max(1, ...bars.map((b) => b.minutes))
+  const n = bars.length
+  const pts = bars.map((b, i) => {
+    const x = n === 1 ? 200 : (i / (n - 1)) * 400
+    const y = 100 - (b.minutes / max) * 72 - 14
+    return { x, y }
+  })
+  const lineD = 'M' + pts.map((p) => `${p.x},${p.y}`).join(' L')
+  const areaD = `${lineD} L${pts[pts.length - 1].x},100 L${pts[0].x},100 Z`
+  return { lineD, areaD }
+}
+
+/** Next focus-hours tier toward a long-run goal (for progress UI). */
+export function focusHoursMilestone(focusHours: number): {
+  label: string
+  current: number
+  target: number
+} {
+  const tiers = [
+    { t: 30, label: 'Emerging' },
+    { t: 60, label: 'Solid' },
+    { t: 100, label: 'Diligent' },
+    { t: 200, label: 'Elite' },
+  ]
+  for (const tier of tiers) {
+    if (focusHours < tier.t) {
+      return { label: tier.label, current: focusHours, target: tier.t }
+    }
+  }
+  const cap = Math.max(200, focusHours)
+  return { label: 'Elite', current: focusHours, target: cap }
+}
+
+const AWAKE_MINUTES_DEFAULT = 16 * 60
+
+export function awakeTimePercent(avgDailyScreenMinutes: number): number {
+  if (avgDailyScreenMinutes <= 0) return 0
+  return Math.min(100, Math.round((avgDailyScreenMinutes / AWAKE_MINUTES_DEFAULT) * 100))
+}
+
+export function formatAvgScreenHeading(mins: number): string {
+  const h = Math.floor(mins / 60)
+  const m = Math.round(mins % 60)
+  if (h === 0) return `${m} mins`
+  if (m === 0) return `${h} ${h === 1 ? 'hr' : 'hrs'}`
+  return `${h} ${h === 1 ? 'hr' : 'hrs'}, ${m.toString().padStart(2, '0')} mins`
 }
 
 export function rankLabel(streak: number): { title: string; subtitle: string } {

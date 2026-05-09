@@ -10,13 +10,13 @@ import {
   View,
 } from 'react-native'
 import type { PersistedState } from '../types'
-import { colors, fonts, space } from '../theme'
+import { cardRadius, colors, fonts, space } from '../theme'
+import { patchReportedScreenTime } from '../storage'
 import {
   openAppSettings,
   openFocusModesHelp,
   openScreenTimeSettings,
 } from '../utils/iosSystem'
-import { patchReportedScreenTime } from '../storage'
 
 type Props = {
   data: PersistedState
@@ -53,27 +53,26 @@ export function SettingsView({
       style={styles.scroll}
       contentContainerStyle={[
         styles.content,
-        { paddingBottom: bottomInset + space.bottomNav + 24 },
+        { paddingBottom: bottomInset + space.bottomNav + 28 },
       ]}
+      showsVerticalScrollIndicator={false}
     >
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.kicker}>System</Text>
-          <Text style={styles.title}>Settings</Text>
+      <View style={styles.kickerRow}>
+        <Text style={styles.pageKicker}>System</Text>
+      </View>
+
+      <View style={styles.pageHeader}>
+        <View style={styles.headerLeft}>
+          <View style={styles.iconBadge}>
+            <Ionicons name="settings-outline" size={22} color={colors.muted2} />
+          </View>
+          <Text style={styles.pageTitle}>Settings</Text>
         </View>
-        <Ionicons name="settings-outline" size={28} color="rgba(255,255,255,0.4)" />
       </View>
 
-      <View style={styles.block}>
-        <Text style={styles.label}>Your focus</Text>
-        <Text style={styles.body}>
-          {data.profile.mainObjective || '—'}
-        </Text>
-      </View>
-
-      <View style={styles.block}>
+      <View style={[styles.card, styles.minCard]}>
         <Text style={styles.label}>Screen time average</Text>
-        <Text style={[styles.body, { marginBottom: 12 }]}>
+        <Text style={styles.body}>
           iOS does not expose Screen Time to this app. Enter the daily average you see under
           Settings ▸ Screen Time so charts match your real usage.
         </Text>
@@ -85,32 +84,32 @@ export function SettingsView({
           placeholderTextColor={colors.muted3}
           style={styles.input}
         />
-        <Pressable style={styles.actionBtn} onPress={applyDailyAverage}>
-          <Text style={styles.actionBtnText}>Save &amp; refresh charts</Text>
+        <Pressable style={styles.primaryOutline} onPress={applyDailyAverage}>
+          <Text style={styles.primaryOutlineText}>Save & refresh charts</Text>
         </Pressable>
       </View>
 
-      <View style={styles.block}>
+      <View style={[styles.card, styles.minCard]}>
         <Text style={styles.label}>iPhone blocking</Text>
         <Text style={[styles.body, { marginBottom: 16 }]}>
-          App limits and Downtime are controlled by Apple in Settings. These buttons open system
-          screens (when iOS allows the link).
+          App limits and Downtime are controlled by Apple in Settings. These open system screens when
+          iOS allows the link.
         </Text>
-        <Pressable style={styles.primaryBtn} onPress={() => openScreenTimeSettings()}>
-          <Text style={styles.primaryBtnText}>Screen Time &amp; App Limits</Text>
+        <Pressable style={styles.primaryOutline} onPress={() => openScreenTimeSettings()}>
+          <Text style={styles.primaryOutlineText}>Screen Time & App Limits</Text>
         </Pressable>
-        <Pressable style={styles.secondaryBtn} onPress={() => openFocusModesHelp()}>
-          <Text style={styles.secondaryBtnText}>Focus modes (guide)</Text>
+        <Pressable style={styles.secondaryOutline} onPress={() => openFocusModesHelp()}>
+          <Text style={styles.secondaryOutlineText}>Focus modes (guide)</Text>
         </Pressable>
-        <Pressable style={styles.secondaryBtn} onPress={() => openAppSettings()}>
-          <Text style={styles.secondaryBtnText}>This app in Settings</Text>
+        <Pressable style={styles.secondaryOutline} onPress={() => openAppSettings()}>
+          <Text style={styles.secondaryOutlineText}>This app in Settings</Text>
         </Pressable>
       </View>
 
-      <View style={styles.block}>
+      <View style={[styles.card, styles.minCard]}>
         <Text style={styles.label}>Setup</Text>
         <Pressable
-          style={styles.secondaryBtn}
+          style={styles.secondaryOutline}
           onPress={() =>
             Alert.alert('Run setup again?', 'You will go through the questions again.', [
               { text: 'Cancel', style: 'cancel' },
@@ -118,13 +117,13 @@ export function SettingsView({
             ])
           }
         >
-          <Text style={styles.secondaryBtnText}>Run setup again</Text>
+          <Text style={styles.secondaryOutlineText}>Run setup again</Text>
         </Pressable>
       </View>
 
-      <View style={styles.block}>
+      <View style={[styles.card, styles.minCard]}>
         <Text style={styles.label}>Data</Text>
-        <Text style={[styles.body, { marginBottom: 24 }]}>
+        <Text style={[styles.body, { marginBottom: 20 }]}>
           Everything stays on this device. Uninstalling clears it.
         </Text>
         <Pressable
@@ -138,9 +137,9 @@ export function SettingsView({
               ],
             )
           }
-          style={styles.resetBtn}
+          style={styles.destructiveBtn}
         >
-          <Text style={styles.resetLabel}>Reset local data</Text>
+          <Text style={styles.destructiveLabel}>Reset local data</Text>
         </Pressable>
       </View>
     </ScrollView>
@@ -154,33 +153,54 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'center',
     paddingHorizontal: space.container,
-    paddingTop: 56,
-    gap: 32,
+    paddingTop: 12,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
+  minCard: {
+    borderRadius: cardRadius,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.outline,
+    backgroundColor: 'transparent',
   },
-  kicker: {
+  kickerRow: { marginBottom: 20 },
+  pageKicker: {
     ...fonts.semibold,
     fontSize: 12,
     letterSpacing: 2.4,
     color: colors.muted,
     textTransform: 'uppercase',
-    marginBottom: 8,
   },
-  title: {
+  pageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    flex: 1,
+    minWidth: 0,
+  },
+  iconBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.outline,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pageTitle: {
     ...fonts.bold,
-    fontSize: 42,
-    lineHeight: 46,
+    fontSize: 28,
+    lineHeight: 32,
+    letterSpacing: -0.5,
     color: colors.text,
+    flex: 1,
   },
-  block: {
-    borderBottomWidth: 0.5,
-    borderBottomColor: colors.outline,
-    paddingBottom: 32,
+  card: {
+    padding: 18,
+    marginBottom: 16,
   },
   label: {
     ...fonts.semibold,
@@ -192,73 +212,64 @@ const styles = StyleSheet.create({
   },
   body: {
     ...fonts.regular,
-    fontSize: 15,
-    lineHeight: 24,
-    color: 'rgba(255,255,255,0.5)',
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.muted2,
+    marginBottom: 12,
   },
   input: {
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.outline,
-    padding: 14,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     ...fonts.regular,
     fontSize: 16,
     color: colors.text,
     marginBottom: 12,
   },
-  actionBtn: {
-    alignSelf: 'flex-start',
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderWidth: 1,
-    borderColor: colors.text,
-  },
-  actionBtnText: {
-    ...fonts.semibold,
-    fontSize: 12,
-    letterSpacing: 1.2,
-    color: colors.text,
-    textTransform: 'uppercase',
-  },
-  primaryBtn: {
+  primaryOutline: {
     paddingVertical: 14,
     paddingHorizontal: 16,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.text,
+    borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 10,
   },
-  primaryBtnText: {
+  primaryOutlineText: {
     ...fonts.semibold,
     fontSize: 12,
+    letterSpacing: 1,
     color: colors.text,
     textTransform: 'uppercase',
-    letterSpacing: 1.2,
   },
-  secondaryBtn: {
+  secondaryOutline: {
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.outline,
+    borderRadius: 12,
     alignItems: 'center',
     marginBottom: 10,
   },
-  secondaryBtnText: {
+  secondaryOutlineText: {
     ...fonts.medium,
     fontSize: 14,
     color: colors.muted2,
   },
-  resetBtn: {
+  destructiveBtn: {
     alignSelf: 'flex-start',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.2)',
     paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,69,58,0.45)',
+    borderRadius: 12,
   },
-  resetLabel: {
+  destructiveLabel: {
     ...fonts.semibold,
-    fontSize: 13,
-    letterSpacing: 1.5,
-    color: 'rgba(255,255,255,0.85)',
+    fontSize: 12,
+    letterSpacing: 1,
+    color: '#ff453a',
     textTransform: 'uppercase',
   },
 })

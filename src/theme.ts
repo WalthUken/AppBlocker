@@ -16,6 +16,11 @@ export const space = {
   bottomNav: 88,
 }
 
+/** Fixed header title — never derived from onboarding goals. */
+export const appBrandName = 'Austerity'
+
+export const cardRadius = 16
+
 /** iOS: San Francisco via system font weights. Android: Inter. */
 function face(
   iosWeight: NonNullable<TextStyle['fontWeight']>,

@@ -35,6 +35,17 @@ export interface DayUsage {
   minutes: number
 }
 
+/** Scheduled “Work Time” window (visual + reminders; blocking is still system-level). */
+export interface WorkSchedule {
+  /** Minutes from midnight (0–1439). */
+  startMinutes: number
+  endMinutes: number
+  /** Index 0 = Monday … 6 = Sunday. */
+  daysActive: boolean[]
+  breaksAllowed: boolean
+  vacationMode: boolean
+}
+
 export interface PersistedState {
   profile: UserProfile
   targets: BlockTarget[]
@@ -45,4 +56,5 @@ export interface PersistedState {
   dailyFocusMinutes: DayUsage[]
   blockAttempts: number
   blockFailed: number
+  workSchedule: WorkSchedule
 }

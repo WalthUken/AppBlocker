@@ -4,6 +4,7 @@ import type {
   PersistedState,
   SessionEntry,
   UserProfile,
+  WorkSchedule,
 } from './types'
 import { dateKey } from './utils/stats'
 
@@ -47,6 +48,16 @@ export function seedScreenTimeFromReport(
   return out
 }
 
+export function defaultWorkSchedule(): WorkSchedule {
+  return {
+    startMinutes: 9 * 60,
+    endMinutes: 17 * 60,
+    daysActive: [true, true, true, true, true, false, false],
+    breaksAllowed: true,
+    vacationMode: false,
+  }
+}
+
 function defaultTargets() {
   return [
     { id: 'ig', name: 'Instagram', enabled: true },
@@ -74,6 +85,7 @@ export function buildMinimalState(): PersistedState {
     dailyFocusMinutes: [],
     blockAttempts: 0,
     blockFailed: 0,
+    workSchedule: defaultWorkSchedule(),
   }
 }
 
@@ -122,6 +134,7 @@ export function buildResetDemoState(): PersistedState {
     dailyFocusMinutes: [],
     blockAttempts: 142,
     blockFailed: 0,
+    workSchedule: defaultWorkSchedule(),
   }
 }
 
@@ -213,6 +226,29 @@ function migrate(raw: Record<string, unknown>): PersistedState {
     onboardingDone,
   }
 
+  let workSchedule: WorkSchedule = minimal.workSchedule
+  const ws = raw.workSchedule as Partial<WorkSchedule> | undefined
+  if (ws && typeof ws === 'object') {
+    const daysRaw = Array.isArray(ws.daysActive) ? ws.daysActive : null
+    const daysOk =
+      daysRaw != null &&
+      daysRaw.length === 7 &&
+      daysRaw.every((x) => x === true || x === false)
+    workSchedule = {
+      startMinutes:
+        typeof ws.startMinutes === 'number'
+          ? Math.max(0, Math.min(1439, ws.startMinutes))
+          : minimal.workSchedule.startMinutes,
+      endMinutes:
+        typeof ws.endMinutes === 'number'
+          ? Math.max(0, Math.min(1439, ws.endMinutes))
+          : minimal.workSchedule.endMinutes,
+      daysActive: daysOk ? (daysRaw as boolean[]) : [...minimal.workSchedule.daysActive],
+      breaksAllowed: ws.breaksAllowed !== false,
+      vacationMode: ws.vacationMode === true,
+    }
+  }
+
   return {
     profile,
     targets,
@@ -221,6 +257,7 @@ function migrate(raw: Record<string, unknown>): PersistedState {
     dailyFocusMinutes,
     blockAttempts: (raw.blockAttempts as number) ?? minimal.blockAttempts,
     blockFailed: (raw.blockFailed as number) ?? minimal.blockFailed,
+    workSchedule,
   }
 }
 

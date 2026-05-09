@@ -33,6 +33,29 @@ const OBJECTIVES = [
   { id: 'other', label: 'Something else' },
 ] as const
 
+/** Pick one or more — stored as a single line joined with " · ". */
+const LONG_TERM_GOAL_OPTIONS = [
+  { id: 'lt_career', label: 'Career growth & mastery' },
+  { id: 'lt_finance', label: 'Financial stability' },
+  { id: 'lt_health', label: 'Health & longevity' },
+  { id: 'lt_relationships', label: 'Relationships & family' },
+  { id: 'lt_creative', label: 'Creative work or a major project' },
+  { id: 'lt_education', label: 'Education or credentials' },
+  { id: 'lt_balance', label: 'Calmer pace & better boundaries' },
+  { id: 'lt_other', label: 'Something else (describe)' },
+] as const
+
+const SHORT_TERM_GOAL_OPTIONS = [
+  { id: 'st_exam', label: 'Pass an exam or finish a course' },
+  { id: 'st_habit', label: 'Build a daily habit (30 days)' },
+  { id: 'st_project', label: 'Ship a project milestone' },
+  { id: 'st_screen', label: 'Cut passive screen time this month' },
+  { id: 'st_sleep', label: 'Improve sleep / morning routine' },
+  { id: 'st_focus', label: 'More deep-work blocks each week' },
+  { id: 'st_fitness', label: 'Fitness or training block' },
+  { id: 'st_other', label: 'Something else (describe)' },
+] as const
+
 const AGE_CHOICES = [
   { label: '18–24', age: 21 },
   { label: '25–34', age: 30 },
@@ -53,8 +76,10 @@ export function SetupFlow({ onFinished }: Props) {
   const [step, setStep] = useState(0)
   const [mainObjective, setMainObjective] = useState<string>('')
   const [objectiveOther, setObjectiveOther] = useState('')
-  const [longTermGoals, setLongTermGoals] = useState('')
-  const [shortTermGoals, setShortTermGoals] = useState('')
+  const [longTermPicked, setLongTermPicked] = useState<string[]>([])
+  const [longTermOther, setLongTermOther] = useState('')
+  const [shortTermPicked, setShortTermPicked] = useState<string[]>([])
+  const [shortTermOther, setShortTermOther] = useState('')
   const [dailyMinutes, setDailyMinutes] = useState(180)
   const [age, setAge] = useState<number | null>(null)
   const fade = useRef(new Animated.Value(1)).current
@@ -73,6 +98,36 @@ export function SetupFlow({ onFinished }: Props) {
       ? objectiveOther.trim()
       : OBJECTIVES.find((o) => o.id === mainObjective)?.label ?? ''
 
+  const togglePicked = (ids: string[], id: string) =>
+    ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]
+
+  const formatPickedGoals = (
+    picked: string[],
+    options: readonly { id: string; label: string }[],
+    otherId: string,
+    otherText: string,
+  ) => {
+    const labels = picked
+      .filter((id) => id !== otherId)
+      .map((id) => options.find((o) => o.id === id)?.label)
+      .filter((x): x is string => !!x)
+    if (picked.includes(otherId) && otherText.trim()) labels.push(otherText.trim())
+    return labels.join(' · ')
+  }
+
+  const longTermGoalsText = formatPickedGoals(
+    longTermPicked,
+    LONG_TERM_GOAL_OPTIONS,
+    'lt_other',
+    longTermOther,
+  )
+  const shortTermGoalsText = formatPickedGoals(
+    shortTermPicked,
+    SHORT_TERM_GOAL_OPTIONS,
+    'st_other',
+    shortTermOther,
+  )
+
   const grid = lifeRemainingGrid(dailyMinutes, age)
 
   const canNext = () => {
@@ -83,9 +138,13 @@ export function SetupFlow({ onFinished }: Props) {
           (mainObjective !== 'other' || objectiveOther.trim().length > 0)
         )
       case 1:
-        return longTermGoals.trim().length > 0
+        if (longTermPicked.length === 0) return false
+        if (longTermPicked.includes('lt_other') && !longTermOther.trim()) return false
+        return longTermGoalsText.length > 0
       case 2:
-        return shortTermGoals.trim().length > 0
+        if (shortTermPicked.length === 0) return false
+        if (shortTermPicked.includes('st_other') && !shortTermOther.trim()) return false
+        return shortTermGoalsText.length > 0
       case 3:
         return dailyMinutes >= 30
       case 4:
@@ -100,8 +159,8 @@ export function SetupFlow({ onFinished }: Props) {
     else {
       const profile: UserProfile = {
         mainObjective: objectiveLabel,
-        longTermGoals: longTermGoals.trim(),
-        shortTermGoals: shortTermGoals.trim(),
+        longTermGoals: longTermGoalsText,
+        shortTermGoals: shortTermGoalsText,
         reportedDailyPhoneMinutes: dailyMinutes,
         age,
         setupComplete: true,
@@ -171,16 +230,35 @@ export function SetupFlow({ onFinished }: Props) {
               <Text style={styles.kicker}>Direction</Text>
               <Text style={styles.headline}>What are your long-term goals?</Text>
               <Text style={styles.sub}>
-                Think years ahead—career, health, craft, relationships.
+                Think years ahead. Tap all that apply—you can refine later in Settings.
               </Text>
-              <TextInput
-                value={longTermGoals}
-                onChangeText={setLongTermGoals}
-                placeholder="Write freely…"
-                placeholderTextColor={colors.muted3}
-                multiline
-                style={[styles.textInput, styles.textArea]}
-              />
+              <View style={styles.options}>
+                {LONG_TERM_GOAL_OPTIONS.map((o) => {
+                  const on = longTermPicked.includes(o.id)
+                  return (
+                    <Pressable
+                      key={o.id}
+                      onPress={() =>
+                        setLongTermPicked((prev) => togglePicked(prev, o.id))
+                      }
+                      style={[styles.optionBox, on && styles.optionBoxOn]}
+                    >
+                      <Text style={[styles.optionText, on && styles.optionTextOn]}>
+                        {o.label}
+                      </Text>
+                    </Pressable>
+                  )
+                })}
+              </View>
+              {longTermPicked.includes('lt_other') && (
+                <TextInput
+                  value={longTermOther}
+                  onChangeText={setLongTermOther}
+                  placeholder="Your long-term focus in a few words"
+                  placeholderTextColor={colors.muted3}
+                  style={styles.textInput}
+                />
+              )}
             </View>
           )}
 
@@ -188,15 +266,36 @@ export function SetupFlow({ onFinished }: Props) {
             <View style={styles.step}>
               <Text style={styles.kicker}>Now</Text>
               <Text style={styles.headline}>What are your short-term goals?</Text>
-              <Text style={styles.sub}>This month or this semester—concrete and small.</Text>
-              <TextInput
-                value={shortTermGoals}
-                onChangeText={setShortTermGoals}
-                placeholder="Write freely…"
-                placeholderTextColor={colors.muted3}
-                multiline
-                style={[styles.textInput, styles.textArea]}
-              />
+              <Text style={styles.sub}>
+                This month or this semester—concrete wins. Select any that fit.
+              </Text>
+              <View style={styles.options}>
+                {SHORT_TERM_GOAL_OPTIONS.map((o) => {
+                  const on = shortTermPicked.includes(o.id)
+                  return (
+                    <Pressable
+                      key={o.id}
+                      onPress={() =>
+                        setShortTermPicked((prev) => togglePicked(prev, o.id))
+                      }
+                      style={[styles.optionBox, on && styles.optionBoxOn]}
+                    >
+                      <Text style={[styles.optionText, on && styles.optionTextOn]}>
+                        {o.label}
+                      </Text>
+                    </Pressable>
+                  )
+                })}
+              </View>
+              {shortTermPicked.includes('st_other') && (
+                <TextInput
+                  value={shortTermOther}
+                  onChangeText={setShortTermOther}
+                  placeholder="Your short-term focus in a few words"
+                  placeholderTextColor={colors.muted3}
+                  style={styles.textInput}
+                />
+              )}
             </View>
           )}
 
