@@ -1,8 +1,10 @@
 import Slider from '@react-native-community/slider'
 import { Ionicons } from '@expo/vector-icons'
-import { useMemo, useState, type ReactNode } from 'react'
+import * as Haptics from 'expo-haptics'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -80,6 +82,9 @@ export function BlockView({
   const [createOpen, setCreateOpen] = useState(false)
   const [customTitle, setCustomTitle] = useState('')
   const [customMinutes, setCustomMinutes] = useState(25)
+  const [catalogOpen, setCatalogOpen] = useState(false)
+  const [manageOpen, setManageOpen] = useState(false)
+  const lastHapticMinutesRef = useRef<number | null>(null)
 
   const byName = useMemo(() => {
     const m = new Map<string, BlockTarget>()
@@ -102,7 +107,16 @@ export function BlockView({
     if (active) return
     setCustomTitle('')
     setCustomMinutes(25)
+    lastHapticMinutesRef.current = 25
     setCreateOpen(true)
+  }
+
+  const onSessionLengthChange = (value: number) => {
+    setCustomMinutes(value)
+    if (Platform.OS === 'web') return
+    if (lastHapticMinutesRef.current === value) return
+    lastHapticMinutesRef.current = value
+    void Haptics.selectionAsync().catch(() => {})
   }
 
   const startFromModal = () => {
@@ -110,6 +124,13 @@ export function BlockView({
     if (active) return
     onStartSession(customMinutes, title)
     setCreateOpen(false)
+  }
+
+  const addCustomFromManage = () => {
+    const name = draft.trim()
+    if (!name) return
+    if (!byName.get(name.toLowerCase())) onAdd(name)
+    setDraft('')
   }
 
   return (
@@ -139,8 +160,8 @@ export function BlockView({
         <View style={[styles.card, styles.minCard]}>
           <Text style={styles.cardKicker}>Focus session</Text>
           <Text style={styles.cardBody}>
-            While a timer runs, the apps you enable below are the ones you intend to stay away
-            from—real limits still use Screen Time or Focus on your iPhone.
+            While a timer runs, the apps you pick in the list below are what you intend to avoid—real
+            limits still use Screen Time or Focus on your iPhone.
           </Text>
           <Text style={styles.metaLine}>
             {enabledBlockCount} {enabledBlockCount === 1 ? 'app' : 'apps'} on for sessions
@@ -165,13 +186,13 @@ export function BlockView({
           ) : (
             <Pressable
               onPress={openStartModal}
-              style={({ pressed }) => [styles.sessionRow, pressed && { opacity: 0.85 }]}
+              style={({ pressed }) => [styles.openRow, pressed && { opacity: 0.85 }]}
             >
-              <View style={styles.sessionRowLeft}>
+              <View style={styles.openRowLeft}>
                 <Ionicons name="play-outline" size={22} color={colors.text} />
-                <View style={styles.sessionRowText}>
-                  <Text style={styles.sessionRowTitle}>Start focus timer</Text>
-                  <Text style={styles.sessionRowSub}>Set length here—stays on this screen</Text>
+                <View style={styles.openRowText}>
+                  <Text style={styles.openRowTitle}>Start focus timer</Text>
+                  <Text style={styles.openRowSub}>Choose length in the next step</Text>
                 </View>
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.muted3} />
@@ -180,113 +201,179 @@ export function BlockView({
         </View>
 
         <View style={[styles.card, styles.minCard]}>
-          <Text style={styles.cardKicker}>Apps to block</Text>
+          <Text style={styles.cardKicker}>Block list</Text>
           <Text style={styles.sectionHint}>
-            Choose what you want to avoid during focus. Tap a name to add; tap again to turn off.
+            Open a screen, then tap items in the list. Fewer taps here; choices live inside each sheet.
           </Text>
 
-          <Text style={styles.subLabel}>Pick manually</Text>
-          <View style={styles.catalog}>
-            {CATALOG.map((name) => {
-              const hit = byName.get(name.toLowerCase())
-              const on = hit?.enabled ?? false
-              const listed = !!hit
-              return (
-                <Pressable
-                  key={name}
-                  onPress={() => toggleCatalog(name)}
-                  style={[
-                    styles.chip,
-                    listed && on && styles.chipOn,
-                    listed && !on && styles.chipDim,
-                  ]}
-                >
-                  <Text
-                    style={[styles.chipText, listed && on && styles.chipTextOn]}
-                    numberOfLines={1}
-                  >
-                    {name}
-                  </Text>
-                </Pressable>
-              )
-            })}
-          </View>
-
-          <View style={styles.insetDivider} />
-
-          <Text style={styles.subLabel}>Custom name</Text>
-          <View style={styles.form}>
-            <TextInput
-              value={draft}
-              onChangeText={setDraft}
-              placeholder="Other app or site"
-              placeholderTextColor={colors.muted3}
-              style={styles.input}
-              onSubmitEditing={() => {
-                const name = draft.trim()
-                if (!name) return
-                if (!byName.get(name.toLowerCase())) onAdd(name)
-                setDraft('')
-              }}
-              returnKeyType="done"
-            />
-            <Pressable
-              onPress={() => {
-                const name = draft.trim()
-                if (!name) return
-                if (!byName.get(name.toLowerCase())) onAdd(name)
-                setDraft('')
-              }}
-              style={styles.addBtn}
-            >
-              <Text style={styles.addLabel}>Add</Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.insetDivider} />
-
-          <Text style={styles.subLabel}>Your list</Text>
-          {targets.length === 0 ? (
-            <Text style={styles.empty}>Nothing here yet.</Text>
-          ) : (
-            targets.map((t, i) => (
-              <View
-                key={t.id}
-                style={[
-                  styles.row,
-                  i > 0 && {
-                    borderTopWidth: StyleSheet.hairlineWidth,
-                    borderTopColor: colors.outline,
-                  },
-                ]}
-              >
-                <View style={{ flex: 1, marginRight: 16 }}>
-                  <Text style={styles.rowTitle} numberOfLines={1}>
-                    {t.name}
-                  </Text>
-                  <Text style={styles.rowMeta}>{t.enabled ? 'On for sessions' : 'Off'}</Text>
-                </View>
-                <Pressable
-                  accessibilityRole="switch"
-                  accessibilityState={{ checked: t.enabled }}
-                  onPress={() => onToggle(t.id)}
-                  style={[
-                    styles.switchTrack,
-                    t.enabled ? styles.switchOn : styles.switchOff,
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.switchThumb,
-                      { transform: [{ translateX: t.enabled ? 20 : 0 }] },
-                    ]}
-                  />
-                </Pressable>
+          <Pressable
+            onPress={() => setCatalogOpen(true)}
+            style={({ pressed }) => [styles.openRow, styles.openRowSpaced, pressed && { opacity: 0.85 }]}
+          >
+            <View style={styles.openRowLeft}>
+              <Ionicons name="list-outline" size={22} color={colors.text} />
+              <View style={styles.openRowText}>
+                <Text style={styles.openRowTitle}>Browse catalog</Text>
+                <Text style={styles.openRowSub}>Pick common apps from a list</Text>
               </View>
-            ))
-          )}
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.muted3} />
+          </Pressable>
+
+          <Pressable
+            onPress={() => setManageOpen(true)}
+            style={({ pressed }) => [styles.openRow, pressed && { opacity: 0.85 }]}
+          >
+            <View style={styles.openRowLeft}>
+              <Ionicons name="create-outline" size={22} color={colors.text} />
+              <View style={styles.openRowText}>
+                <Text style={styles.openRowTitle}>Manage my list</Text>
+                <Text style={styles.openRowSub}>
+                  {targets.length === 0
+                    ? 'Custom names and on/off per app'
+                    : `${targets.length} ${targets.length === 1 ? 'item' : 'items'} · custom add & toggles`}
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.muted3} />
+          </Pressable>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={catalogOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setCatalogOpen(false)}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={() => setCatalogOpen(false)}>
+          <Pressable style={styles.sheetCard} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Catalog</Text>
+              <Pressable onPress={() => setCatalogOpen(false)} hitSlop={12}>
+                <Text style={styles.sheetDone}>Done</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.sheetHint}>Tap a row to add it, or toggle it off your list.</Text>
+            <ScrollView
+              style={styles.sheetScroll}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {CATALOG.map((name) => {
+                const hit = byName.get(name.toLowerCase())
+                const on = hit?.enabled ?? false
+                const listed = !!hit
+                return (
+                  <Pressable
+                    key={name}
+                    onPress={() => toggleCatalog(name)}
+                    style={({ pressed }) => [styles.catalogRow, pressed && { opacity: 0.88 }]}
+                  >
+                    <Text style={styles.catalogName} numberOfLines={1}>
+                      {name}
+                    </Text>
+                    <View style={styles.catalogRight}>
+                      {!listed ? (
+                        <Text style={styles.catalogMeta}>Add</Text>
+                      ) : on ? (
+                        <>
+                          <Text style={styles.catalogMetaOn}>On</Text>
+                          <Ionicons name="checkmark-circle" size={22} color={colors.text} />
+                        </>
+                      ) : (
+                        <>
+                          <Text style={styles.catalogMeta}>Off</Text>
+                          <Ionicons name="ellipse-outline" size={22} color={colors.muted2} />
+                        </>
+                      )}
+                    </View>
+                  </Pressable>
+                )
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={manageOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setManageOpen(false)}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={() => setManageOpen(false)}>
+          <Pressable style={styles.sheetCard} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>My block list</Text>
+              <Pressable onPress={() => setManageOpen(false)} hitSlop={12}>
+                <Text style={styles.sheetDone}>Done</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.subLabel}>Custom name</Text>
+            <View style={styles.form}>
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                placeholder="Other app or site"
+                placeholderTextColor={colors.muted3}
+                style={styles.input}
+                onSubmitEditing={addCustomFromManage}
+                returnKeyType="done"
+              />
+              <Pressable onPress={addCustomFromManage} style={styles.addBtn}>
+                <Text style={styles.addLabel}>Add</Text>
+              </Pressable>
+            </View>
+            <Text style={[styles.subLabel, { marginTop: 18 }]}>Your apps</Text>
+            {targets.length === 0 ? (
+              <Text style={styles.empty}>Nothing here yet. Use the field above or the catalog.</Text>
+            ) : (
+              <ScrollView
+                style={styles.sheetScroll}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                {targets.map((t, i) => (
+                  <View
+                    key={t.id}
+                    style={[
+                      styles.row,
+                      i > 0 && {
+                        borderTopWidth: StyleSheet.hairlineWidth,
+                        borderTopColor: colors.outline,
+                      },
+                    ]}
+                  >
+                    <View style={{ flex: 1, marginRight: 16 }}>
+                      <Text style={styles.rowTitle} numberOfLines={1}>
+                        {t.name}
+                      </Text>
+                      <Text style={styles.rowMeta}>{t.enabled ? 'On for sessions' : 'Off'}</Text>
+                    </View>
+                    <Pressable
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: t.enabled }}
+                      onPress={() => onToggle(t.id)}
+                      style={[
+                        styles.switchTrack,
+                        t.enabled ? styles.switchOn : styles.switchOff,
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.switchThumb,
+                          { transform: [{ translateX: t.enabled ? 20 : 0 }] },
+                        ]}
+                      />
+                    </Pressable>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={createOpen}
@@ -312,7 +399,7 @@ export function BlockView({
               maximumValue={180}
               step={5}
               value={customMinutes}
-              onValueChange={setCustomMinutes}
+              onValueChange={onSessionLengthChange}
               minimumTrackTintColor={colors.text}
               maximumTrackTintColor={colors.outline}
               thumbTintColor={colors.text}
@@ -455,7 +542,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.text,
   },
-  sessionRow: {
+  openRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -465,20 +552,23 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.outline,
   },
-  sessionRowLeft: {
+  openRowSpaced: {
+    marginBottom: 12,
+  },
+  openRowLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
     flex: 1,
     minWidth: 0,
   },
-  sessionRowText: { flex: 1, minWidth: 0 },
-  sessionRowTitle: {
+  openRowText: { flex: 1, minWidth: 0 },
+  openRowTitle: {
     ...fonts.medium,
     fontSize: 16,
     color: colors.text,
   },
-  sessionRowSub: {
+  openRowSub: {
     ...fonts.regular,
     fontSize: 12,
     color: colors.muted2,
@@ -498,39 +588,6 @@ const styles = StyleSheet.create({
     color: colors.muted,
     textTransform: 'uppercase',
     marginBottom: 10,
-  },
-  insetDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.outline,
-    marginVertical: 18,
-  },
-  catalog: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  chip: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.outline,
-    borderRadius: 12,
-    maxWidth: '48%',
-  },
-  chipOn: {
-    borderColor: colors.text,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  chipDim: {
-    opacity: 0.5,
-  },
-  chipText: {
-    ...fonts.medium,
-    fontSize: 14,
-    color: colors.muted2,
-  },
-  chipTextOn: {
-    color: colors.text,
   },
   form: {
     flexDirection: 'row',
@@ -609,6 +666,77 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: colors.text,
     marginLeft: 2,
+  },
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'flex-end',
+    paddingHorizontal: space.container,
+    paddingBottom: space.container,
+  },
+  sheetCard: {
+    backgroundColor: colors.bg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.outline,
+    borderRadius: cardRadius,
+    padding: 18,
+    maxHeight: '82%',
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  sheetTitle: {
+    ...fonts.bold,
+    fontSize: 20,
+    color: colors.text,
+  },
+  sheetDone: {
+    ...fonts.semibold,
+    fontSize: 14,
+    color: colors.text,
+  },
+  sheetHint: {
+    ...fonts.regular,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.muted2,
+    marginBottom: 12,
+  },
+  sheetScroll: {
+    maxHeight: 360,
+  },
+  catalogRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.outline,
+  },
+  catalogName: {
+    ...fonts.medium,
+    fontSize: 16,
+    color: colors.text,
+    flex: 1,
+    marginRight: 12,
+  },
+  catalogRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  catalogMeta: {
+    ...fonts.medium,
+    fontSize: 13,
+    color: colors.muted2,
+  },
+  catalogMetaOn: {
+    ...fonts.medium,
+    fontSize: 13,
+    color: colors.muted,
   },
   modalBackdrop: {
     flex: 1,

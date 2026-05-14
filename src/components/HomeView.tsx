@@ -1,16 +1,6 @@
-import Slider from '@react-native-community/slider'
 import { Ionicons } from '@expo/vector-icons'
 import { useMemo, useRef, useState } from 'react'
-import {
-  Animated,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native'
+import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import Svg, { Path } from 'react-native-svg'
 import { appBrandName, cardRadius, colors, fonts, space } from '../theme'
 import type { DayUsage, WorkSchedule } from '../types'
@@ -38,12 +28,6 @@ type Active = {
 
 const STREAK_TARGET_DAYS = 30
 
-const PRESETS: { minutes: number; title: string; subtitle: string }[] = [
-  { minutes: 20, title: 'Get it done', subtitle: 'Quick win' },
-  { minutes: 25, title: 'Work Sprint', subtitle: 'Pomodoro' },
-  { minutes: 45, title: 'Reading Time', subtitle: 'Deep dive' },
-]
-
 type AnalyticsTab = 'week' | 'month' | 'lifetime'
 
 type Props = {
@@ -60,7 +44,6 @@ type Props = {
   onOpenBlockTab: () => void
   onOpenSettings: () => void
   active: Active | null
-  onStartSession: (minutes: number, title: string) => void
   onStopSessionEarly: () => void
   now: number
   bottomInset: number
@@ -120,7 +103,6 @@ export function HomeView({
   onOpenBlockTab,
   onOpenSettings,
   active,
-  onStartSession,
   onStopSessionEarly,
   now,
   bottomInset,
@@ -130,9 +112,6 @@ export function HomeView({
   const remaining = active ? Math.max(0, active.endAt - now) : 0
   const stopInMs = active ? Math.max(0, active.stopAvailableAt - now) : 0
   const canStopEarly = active != null && now >= active.stopAvailableAt
-  const [createOpen, setCreateOpen] = useState(false)
-  const [customTitle, setCustomTitle] = useState('')
-  const [customMinutes, setCustomMinutes] = useState(45)
   const [workTimeOpen, setWorkTimeOpen] = useState(false)
   const [analyticsTab, setAnalyticsTab] = useState<AnalyticsTab>('week')
   const scrollY = useRef(new Animated.Value(0)).current
@@ -164,19 +143,6 @@ export function HomeView({
       : analyticsTab === 'month'
         ? 'Last 4 Weeks'
         : 'Last 12 Weeks'
-
-  const openCreate = (presetTitle?: string) => {
-    setCustomTitle(presetTitle ?? '')
-    setCustomMinutes(45)
-    setCreateOpen(true)
-  }
-
-  const startCustom = () => {
-    const title = customTitle.trim() || 'Focus session'
-    if (active) return
-    onStartSession(customMinutes, title)
-    setCreateOpen(false)
-  }
 
   const onScroll = Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
     useNativeDriver: false,
@@ -378,41 +344,6 @@ export function HomeView({
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.muted2} />
           </Pressable>
-
-          <View style={styles.sectionHead}>
-            <Text style={styles.sectionTitle}>Focus Timer</Text>
-            <Pressable onPress={() => openCreate()} hitSlop={12}>
-              <Text style={styles.sectionAction}>+ New</Text>
-            </Pressable>
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.presetStrip}
-          >
-            {PRESETS.map((p) => (
-              <View key={p.minutes} style={[styles.presetCard, styles.minCard]}>
-                <Text style={styles.presetSub}>{p.subtitle}</Text>
-                <Text style={styles.presetName}>{p.title}</Text>
-                <Text style={styles.presetMin}>{p.minutes} min</Text>
-                <Pressable
-                  onPress={() => {
-                    if (active) return
-                    onStartSession(p.minutes, p.title)
-                  }}
-                  style={({ pressed }) => [
-                    styles.presetStart,
-                    active && { opacity: 0.45 },
-                    pressed && !active && { opacity: 0.92 },
-                  ]}
-                >
-                  <Ionicons name="play" size={14} color={colors.bg} style={{ marginRight: 6 }} />
-                  <Text style={styles.presetStartText}>Start</Text>
-                </Pressable>
-              </View>
-            ))}
-          </ScrollView>
         </Animated.View>
       </Animated.ScrollView>
 
@@ -427,47 +358,6 @@ export function HomeView({
         }}
         onResetToDefault={onResetWorkSchedule}
       />
-
-      <Modal
-        visible={createOpen}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setCreateOpen(false)}
-      >
-        <Pressable style={styles.modalBackdrop} onPress={() => setCreateOpen(false)}>
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>New focus session</Text>
-            <Text style={styles.modalLabel}>What are you working on?</Text>
-            <TextInput
-              value={customTitle}
-              onChangeText={setCustomTitle}
-              placeholder="e.g. Chemistry review"
-              placeholderTextColor={colors.muted3}
-              style={styles.modalInput}
-            />
-            <Text style={styles.modalLabel}>Length · {customMinutes} min</Text>
-            <Slider
-              style={styles.modalSlider}
-              minimumValue={10}
-              maximumValue={180}
-              step={5}
-              value={customMinutes}
-              onValueChange={setCustomMinutes}
-              minimumTrackTintColor={colors.text}
-              maximumTrackTintColor={colors.outline}
-              thumbTintColor={colors.text}
-            />
-            <View style={styles.modalActions}>
-              <Pressable onPress={() => setCreateOpen(false)} style={styles.modalSecondary}>
-                <Text style={styles.modalSecondaryText}>Cancel</Text>
-              </Pressable>
-              <Pressable onPress={startCustom} style={styles.modalPrimary}>
-                <Text style={styles.modalPrimaryText}>Start</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </View>
   )
 }
@@ -736,68 +626,6 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: 4,
   },
-  sectionHead: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-    marginTop: 4,
-  },
-  sectionTitle: {
-    ...fonts.bold,
-    fontSize: 18,
-    letterSpacing: -0.3,
-    color: colors.text,
-  },
-  sectionAction: {
-    ...fonts.semibold,
-    fontSize: 13,
-    letterSpacing: 1.2,
-    color: colors.muted2,
-    textTransform: 'uppercase',
-  },
-  presetStrip: {
-    gap: 12,
-    paddingBottom: 8,
-  },
-  presetCard: {
-    width: 160,
-    padding: 16,
-    minHeight: 158,
-    justifyContent: 'flex-end',
-  },
-  presetSub: {
-    ...fonts.regular,
-    fontSize: 12,
-    color: colors.muted,
-  },
-  presetName: {
-    ...fonts.bold,
-    fontSize: 17,
-    color: colors.text,
-    marginTop: 4,
-  },
-  presetMin: {
-    ...fonts.regular,
-    fontSize: 12,
-    color: colors.muted2,
-    marginTop: 2,
-    marginBottom: 14,
-  },
-  presetStart: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: colors.text,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-  },
-  presetStartText: {
-    ...fonts.semibold,
-    fontSize: 13,
-    color: '#000000',
-  },
   activeCard: {
     padding: 20,
     marginBottom: 20,
@@ -847,77 +675,5 @@ const styles = StyleSheet.create({
     ...fonts.semibold,
     fontSize: 14,
     color: colors.text,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'center',
-    paddingHorizontal: space.container,
-  },
-  modalCard: {
-    backgroundColor: colors.bg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.outline,
-    padding: 22,
-    gap: 8,
-    borderRadius: 16,
-  },
-  modalTitle: {
-    ...fonts.bold,
-    fontSize: 22,
-    color: colors.text,
-    marginBottom: 8,
-  },
-  modalLabel: {
-    ...fonts.semibold,
-    fontSize: 11,
-    letterSpacing: 1,
-    color: colors.muted,
-    textTransform: 'uppercase',
-    marginTop: 12,
-  },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: colors.outline,
-    padding: 14,
-    ...fonts.regular,
-    fontSize: 16,
-    color: colors.text,
-    marginTop: 8,
-    borderRadius: 12,
-  },
-  modalSlider: {
-    width: '100%',
-    height: 44,
-    marginTop: 4,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 24,
-    justifyContent: 'flex-end',
-  },
-  modalSecondary: {
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    borderWidth: 1,
-    borderColor: colors.outline,
-    borderRadius: 12,
-  },
-  modalSecondaryText: {
-    ...fonts.medium,
-    fontSize: 15,
-    color: colors.muted2,
-  },
-  modalPrimary: {
-    paddingVertical: 14,
-    paddingHorizontal: 22,
-    backgroundColor: colors.text,
-    borderRadius: 12,
-  },
-  modalPrimaryText: {
-    ...fonts.semibold,
-    fontSize: 15,
-    color: colors.bg,
   },
 })

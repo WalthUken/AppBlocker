@@ -179,18 +179,6 @@ function Shell() {
             active={activeSession}
             now={now}
             bottomInset={bottomInset}
-            onStartSession={(minutes, title) => {
-              const t = Date.now()
-              setNow(t)
-              setActiveSession({
-                id: randomId(),
-                title,
-                startedAt: t,
-                endAt: t + minutes * 60_000,
-                durationMinutes: minutes,
-                stopAvailableAt: t + STOP_SESSION_DELAY_MS,
-              })
-            }}
             onStopSessionEarly={() => {
               const cur = activeSession
               if (!cur) return
